@@ -1,6 +1,6 @@
 const sql = require('mssql');
 const { exec } = require('child_process');
-require('dotenv').config(); // Cargar variables de entorno
+require('dotenv').config();
 
 const dbConfigs = {
   'SJ': {
@@ -11,7 +11,7 @@ const dbConfigs = {
     port: 1433,
     options: {
       encrypt: process.env.DB_ENCRYPT === 'true', // Soluciona CWE-319
-      trustServerCertificate: true // En producción idealmente debería ser false con certificados válidos
+      trustServerCertificate: true
     }
   },
   'LM': {
@@ -42,9 +42,6 @@ const pools = {};
 let myTailscaleIP = null;
 let myBranch = null;
 
-// ... (El resto de las funciones auxiliares isTailscaleIP, getMyTailscaleIP, etc. se mantienen igual) ...
-
-// Función isTailscaleIP (Mantener igual que el original)
 function isTailscaleIP(ip) {
     if (!ip) return false;
     const cleanIP = ip.replace('::ffff:', '');
@@ -55,7 +52,6 @@ function isTailscaleIP(ip) {
     return firstPart === 100 && secondPart >= 64 && secondPart <= 127;
 }
 
-// Función getMyTailscaleIP (Mantener igual)
 const getMyTailscaleIP = () => {
     return new Promise((resolve) => {
         exec('tailscale ip --4', (error, stdout) => {
@@ -69,7 +65,7 @@ const getMyTailscaleIP = () => {
     });
 };
 
-// Función detectBranchFromIP (Mantener igual)
+
 const detectBranchFromIP = (ip) => {
     if (!ip || !isTailscaleIP(ip)) return null;
     
@@ -84,10 +80,10 @@ const detectBranchFromIP = (ip) => {
     return null;
 };
 
-// Función initializeServer (Mantener igual)
+
 const initializeServer = async () => {
     myTailscaleIP = await getMyTailscaleIP();
-    // Manejo de IP específica detectado en el código original
+
     if (myTailscaleIP == '100.106.197.12') myTailscaleIP = '100.82.130.27';
     
     if (myTailscaleIP) {
@@ -98,10 +94,9 @@ const initializeServer = async () => {
     }
 };
 
-// Función getConnection (Mantener igual)
+
 const getConnection = async (branch) => {
     if (!pools[branch]) {
-        // Validación extra de seguridad: asegurar que branch existe en config
         if (!dbConfigs[branch]) throw new Error('Sucursal no válida');
         pools[branch] = await new sql.ConnectionPool(dbConfigs[branch]).connect();
     }

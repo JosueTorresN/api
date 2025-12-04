@@ -1,15 +1,27 @@
 const express = require('express');
 const cors = require('cors');
 const requestIp = require('request-ip');
+const helmet = require('helmet'); // <--- 1. Importar Helmet
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// <--- 2. Implementar correcciones de seguridad aquí --->
+app.disable('x-powered-by'); // Deshabilita explícitamente la cabecera (CWE-200)
+app.use(helmet());           // Cabeceras de seguridad HTTP (HSTS, XSS Filter, etc.)
 
 app.set('trust proxy', true);
 
 const { detectBranch, determineDatabase, initializeServer } = require('./config/database');
 
-app.use(cors());
+// Configuración de CORS segura (Mejora recomendada para CWE-942)
+// En lugar de app.use(cors()); usa una configuración restrictiva:
+const corsOptions = {
+  origin: 'http://localhost:3000', // O el dominio de tu frontend real
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 app.use(requestIp.mw({
@@ -39,10 +51,12 @@ app.get('/api/geocode', async (req, res) => {
   try {
     const { address } = req.query;
     
-    if (!address) {
-      return res.status(400).json({ error: 'Dirección requerida' });
+    // Validación básica de entrada (Mitigación CWE-20)
+    if (!address || typeof address !== 'string' || address.length > 100) {
+      return res.status(400).json({ error: 'Dirección inválida o requerida' });
     }
 
+    // Se mantiene la funcionalidad original
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1`
     );
