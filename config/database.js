@@ -1,37 +1,38 @@
 const sql = require('mssql');
 const { exec } = require('child_process');
+require('dotenv').config(); // Cargar variables de entorno
 
 const dbConfigs = {
   'SJ': {
-    server: '100.78.216.52',
-    database: 'WWISJ',
-    user: 'sa',
-    password: 'raspberry',
+    server: process.env.DB_SERVER_SJ,
+    database: process.env.DB_NAME_SJ,
+    user: process.env.DB_USER_SJ,
+    password: process.env.DB_PASSWORD_SJ,
     port: 1433,
     options: {
-      encrypt: false,
-      trustServerCertificate: true
+      encrypt: process.env.DB_ENCRYPT === 'true', // Soluciona CWE-319
+      trustServerCertificate: true // En producción idealmente debería ser false con certificados válidos
     }
   },
   'LM': {
-    server: '100.82.130.27', 
-    database: 'WWILM',
-    user: 'projectUser',
-    password: 'AU',
+    server: process.env.DB_SERVER_REMOTE, 
+    database: process.env.DB_NAME_LM,
+    user: process.env.DB_USER_REMOTE,
+    password: process.env.DB_PASSWORD_REMOTE,
     port: 1433,
     options: {
-      encrypt: false,
+      encrypt: process.env.DB_ENCRYPT === 'true',
       trustServerCertificate: true
     }
   },
   'CORP': {
-    server: '100.82.130.27',
-    database: 'WWICorp', 
-    user: 'projectUser',
-    password: 'AU',
+    server: process.env.DB_SERVER_REMOTE,
+    database: process.env.DB_NAME_CORP, 
+    user: process.env.DB_USER_REMOTE,
+    password: process.env.DB_PASSWORD_REMOTE,
     port: 1433,
     options: {
-      encrypt: false,
+      encrypt: process.env.DB_ENCRYPT === 'true',
       trustServerCertificate: true
     }
   }
@@ -41,6 +42,9 @@ const pools = {};
 let myTailscaleIP = null;
 let myBranch = null;
 
+// ... (El resto de las funciones auxiliares isTailscaleIP, getMyTailscaleIP, etc. se mantienen igual) ...
+
+// Función isTailscaleIP (Mantener igual que el original)
 function isTailscaleIP(ip) {
     if (!ip) return false;
     const cleanIP = ip.replace('::ffff:', '');
@@ -51,6 +55,7 @@ function isTailscaleIP(ip) {
     return firstPart === 100 && secondPart >= 64 && secondPart <= 127;
 }
 
+// Función getMyTailscaleIP (Mantener igual)
 const getMyTailscaleIP = () => {
     return new Promise((resolve) => {
         exec('tailscale ip --4', (error, stdout) => {
@@ -64,6 +69,7 @@ const getMyTailscaleIP = () => {
     });
 };
 
+// Función detectBranchFromIP (Mantener igual)
 const detectBranchFromIP = (ip) => {
     if (!ip || !isTailscaleIP(ip)) return null;
     
@@ -78,9 +84,12 @@ const detectBranchFromIP = (ip) => {
     return null;
 };
 
+// Función initializeServer (Mantener igual)
 const initializeServer = async () => {
     myTailscaleIP = await getMyTailscaleIP();
+    // Manejo de IP específica detectado en el código original
     if (myTailscaleIP == '100.106.197.12') myTailscaleIP = '100.82.130.27';
+    
     if (myTailscaleIP) {
         myBranch = detectBranchFromIP(myTailscaleIP);
         console.log(`Servidor iniciado - IP: ${myTailscaleIP}, Branch: ${myBranch}`);
@@ -89,12 +98,16 @@ const initializeServer = async () => {
     }
 };
 
+// Función getConnection (Mantener igual)
 const getConnection = async (branch) => {
     if (!pools[branch]) {
+        // Validación extra de seguridad: asegurar que branch existe en config
+        if (!dbConfigs[branch]) throw new Error('Sucursal no válida');
         pools[branch] = await new sql.ConnectionPool(dbConfigs[branch]).connect();
     }
     return pools[branch];
 };
+
 
 const getClientRealIp = (req) => {
     const xForwardedFor = req.headers['x-forwarded-for'];
@@ -103,18 +116,14 @@ const getClientRealIp = (req) => {
         const realIp = ips[0].trim();
         if (realIp && realIp !== '::1') return realIp;
     }
-    
     const xRealIp = req.headers['x-real-ip'];
     if (xRealIp && xRealIp !== '::1') return xRealIp;
-    
     if (req.clientRealIp && req.clientRealIp !== '::1') return req.clientRealIp;
-    
     return req.connection.remoteAddress;
 };
 
 const detectBranch = (req, res, next) => {
     const clientIP = getClientRealIp(req);
-    
     if (!isTailscaleIP(clientIP)) {
         if ((clientIP === '127.0.0.1' || clientIP === '::1') && myTailscaleIP) {
             req.branch = myBranch;
@@ -127,7 +136,6 @@ const detectBranch = (req, res, next) => {
             return res.status(403).json({ error: 'Branch no reconocido' });
         }
     }
-    
     next();
 };
 
@@ -135,7 +143,6 @@ const determineDatabase = async (req, res, next) => {
     try {
         if (req.path === '/api/auth/login' && req.method === 'POST') {
             const { username, password } = req.body;
-            
             if (username && password) {
                 const pool = await getConnection(req.branch);
                 const result = await pool.request()
@@ -145,7 +152,6 @@ const determineDatabase = async (req, res, next) => {
                 
                 if (result.recordset.length > 0) {
                     const user = result.recordset[0];
-                    
                     if (user.branch === req.branch) {
                         req.user = user;
                         req.database = user.rol === 'corporativo' ? 'CORP' : user.branch;
@@ -163,9 +169,9 @@ const determineDatabase = async (req, res, next) => {
                 req.database = req.branch;
             }
         }
-        
         next();
     } catch (error) {
+        console.error(error); // Log del error para depuración
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 };
